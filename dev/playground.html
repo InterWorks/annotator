@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>annotator playground</title>
+<style>
+  body {
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    max-width: 880px; margin: 30px auto; padding: 0 24px;
+    color: #0b1220; background: #f8fafc;
+  }
+  h1, h2 { margin-top: 1.6em; }
+  h1 { font-size: 22px; }
+  h2 { font-size: 16px; color: #475569; border-bottom: 1px solid #d8dee7; padding-bottom: 4px; }
+  .section { background: #fff; padding: 18px 22px; border-radius: 8px; margin-bottom: 18px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+  .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+  button { padding: 6px 12px; border: 1px solid #d8dee7; border-radius: 4px; background: #fff; cursor: pointer; }
+  table { border-collapse: collapse; margin: 8px 0; }
+  th, td { padding: 6px 12px; border: 1px solid #d8dee7; text-align: left; }
+  th { background: #eef2f7; }
+  .css-1abc2def { color: #b45309; font-weight: 600; }
+  .sc-9x8y7z { font-style: italic; }
+  ._name_h4sh3d_42 { background: #fffbeb; padding: 1px 4px; }
+</style>
+</head>
+<body>
+
+<h1>annotator playground</h1>
+<p>This page exercises every selector-strategy branch and (below) a small React tree so the fiber adapter has something to walk.</p>
+
+<div class="section">
+  <h2>1. Vanilla — testid wins</h2>
+  <button data-testid="primary-cta">Primary CTA (data-testid)</button>
+  <button data-cy="cypress-target">Cypress target (data-cy)</button>
+  <button data-qa="qa-target">QA target (data-qa)</button>
+</div>
+
+<div class="section">
+  <h2>2. Vanilla — stable id wins</h2>
+  <p id="checkout-summary">This paragraph has a stable id.</p>
+  <p id=":r1:">This paragraph has a generated id and should fall through to ARIA/class.</p>
+</div>
+
+<div class="section">
+  <h2>3. Vanilla — ARIA wins</h2>
+  <button role="switch" aria-label="Notifications">🔔 Toggle</button>
+  <div aria-label="Search results region">
+    <span>3 results</span>
+  </div>
+</div>
+
+<div class="section">
+  <h2>4. Vanilla — semantic class wins (hash classes filtered)</h2>
+  <div class="card css-1abc2def sc-9x8y7z">
+    <p class="card-title">Card title with semantic class</p>
+    <p class="_name_h4sh3d_42">CSS-modules hash, should be skipped</p>
+  </div>
+</div>
+
+<div class="section">
+  <h2>5. Vanilla — last resort: ancestor + nth-of-type</h2>
+  <ul>
+    <li>First</li>
+    <li>Second</li>
+    <li>Third — click me, no ids/classes</li>
+    <li>Fourth</li>
+  </ul>
+</div>
+
+<div class="section">
+  <h2>6. React tree (mounted via CDN)</h2>
+  <p>Click cells in the table below to test the fiber adapter.</p>
+  <div id="react-root"></div>
+</div>
+
+<!-- React (dev build for _debugSource) -->
+<script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script>
+  const { createElement: h, useState } = React;
+  const root = ReactDOM.createRoot(document.getElementById("react-root"));
+
+  function Cell({ col, value, rowId }) {
+    return h("td", { "data-col": col, title: `${rowId}.${col}` }, value);
+  }
+  Cell.displayName = "Cell";
+
+  function Row({ row }) {
+    return h(
+      "tr",
+      { "data-row-id": row.id },
+      h(Cell, { col: "name", value: row.name, rowId: row.id }),
+      h(Cell, { col: "owner", value: row.owner, rowId: row.id }),
+      h(Cell, { col: "cost", value: "$" + row.cost.toLocaleString(), rowId: row.id })
+    );
+  }
+  Row.displayName = "Row";
+
+  function BudgetTable({ rows }) {
+    const [highlight, setHighlight] = useState(null);
+    return h(
+      "div",
+      { className: "budget" },
+      h("h3", null, "Budget"),
+      h(
+        "table",
+        null,
+        h("thead", null, h("tr", null, h("th", null, "Item"), h("th", null, "Owner"), h("th", null, "Cost"))),
+        h("tbody", null, rows.map((r) => h(Row, { key: r.id, row: r })))
+      )
+    );
+  }
+  BudgetTable.displayName = "BudgetTable";
+
+  function App() {
+    return h(BudgetTable, {
+      rows: [
+        { id: "phase-0", name: "Domains", owner: "Forrest", cost: 205 },
+        { id: "phase-1", name: "VPN", owner: "Luke", cost: 60 },
+        { id: "phase-2", name: "MacBook Air", owner: "Forrest", cost: 1200 },
+      ],
+    });
+  }
+  App.displayName = "App";
+
+  root.render(h(App));
+</script>
+
+<!-- annotator -->
+<script src="../dist/annotator.iife.js"></script>
+</body>
+</html>

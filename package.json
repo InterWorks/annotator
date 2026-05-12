@@ -16,7 +16,7 @@
     },
     "./iife": "./dist/annotator.iife.js"
   },
-  "files": ["dist", "bin", "README.md"],
+  "files": ["dist", "bin", "LICENSE", "README.md"],
   "bin": {
     "annotator": "./bin/annotator.ts"
   },
@@ -25,7 +25,41 @@
     "dev": "bun run --hot build.ts --watch",
     "playground": "bun run build.ts && bun run dev/serve.ts",
     "demo": "bun run build.ts && bun run dev/demo.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "bun run build && bun run typecheck"
+  },
+  "keywords": [
+    "annotation",
+    "comment",
+    "feedback",
+    "screenshot",
+    "selector",
+    "devtools",
+    "react",
+    "vite-plugin",
+    "claude",
+    "ai-agents",
+    "design-review",
+    "qa",
+    "bug-report",
+    "cli",
+    "overlay"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/InterWorks/annotator.git"
+  },
+  "homepage": "https://github.com/InterWorks/annotator#readme",
+  "bugs": {
+    "url": "https://github.com/InterWorks/annotator/issues"
+  },
+  "author": "InterWorks, Inc.",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "devDependencies": {
     "@types/bun": "latest",

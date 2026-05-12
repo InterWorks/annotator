@@ -118,15 +118,15 @@ async function bunLink(target: string): Promise<void> {
   if ((await reg.exited) !== 0) throw new Error("bun link (registration) failed");
 
   // (b) consume the link in the target project.
-  console.log(`  · running 'bun link @rld/annotator' in ${target}`);
-  const use = Bun.spawn(["bun", "link", "@rld/annotator"], { cwd: target, stdout: "inherit", stderr: "inherit" });
+  console.log(`  · running 'bun link @interworks/annotator' in ${target}`);
+  const use = Bun.spawn(["bun", "link", "@interworks/annotator"], { cwd: target, stdout: "inherit", stderr: "inherit" });
   if ((await use.exited) !== 0) throw new Error("bun link (consume) failed");
 }
 
 async function patchViteConfig(configPath: string, dryRun: boolean): Promise<void> {
   const original = await readFile(configPath, "utf8");
-  if (original.includes("@rld/annotator/vite")) {
-    console.log(`  · ${relative(process.cwd(), configPath)} already references @rld/annotator/vite — leaving alone`);
+  if (original.includes("@interworks/annotator/vite")) {
+    console.log(`  · ${relative(process.cwd(), configPath)} already references @interworks/annotator/vite — leaving alone`);
     return;
   }
 
@@ -136,7 +136,7 @@ async function patchViteConfig(configPath: string, dryRun: boolean): Promise<voi
   for (let i = 0; i < lines.length; i++) {
     if (/^\s*import\s/.test(lines[i]!)) lastImportIdx = i;
   }
-  const importLine = `import annotator from "@rld/annotator/vite";`;
+  const importLine = `import annotator from "@interworks/annotator/vite";`;
   if (lastImportIdx >= 0) lines.splice(lastImportIdx + 1, 0, importLine);
   else lines.unshift(importLine);
 
@@ -222,7 +222,7 @@ async function cmdInit(): Promise<void> {
     const cfg = await findViteConfig(target);
     if (!cfg) { console.error("annotator: no vite.config found"); process.exit(1); }
     if (!noLink && !dryRun) await bunLink(target);
-    else if (noLink) console.log("  · skipping bun link (--no-link). Make sure @rld/annotator resolves.");
+    else if (noLink) console.log("  · skipping bun link (--no-link). Make sure @interworks/annotator resolves.");
     else console.log("  [dry-run] would 'bun link' annotator into project");
     await patchViteConfig(cfg, dryRun);
     await ensureGitignore(target, ".annotator/", dryRun);

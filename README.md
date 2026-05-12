@@ -47,7 +47,7 @@ cd my-vite-app
 annotator init
 ```
 
-Adds `@rld/annotator/vite` to `vite.config.ts` (via `bun link`), `.annotator/` to `.gitignore`, and that's it. Auto-injects in dev (`vite serve`), absent from `vite build`. The "Send" button POSTs sessions straight to `<project>/.annotator/`.
+Adds `@interworks/annotator/vite` to `vite.config.ts` (via `bun link`), `.annotator/` to `.gitignore`, and that's it. Auto-injects in dev (`vite serve`), absent from `vite build`. The "Send" button POSTs sessions straight to `<project>/.annotator/`.
 
 ### 4. Embedded in a static HTML project
 

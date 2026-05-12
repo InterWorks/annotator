@@ -378,8 +378,8 @@ async function record() {
   await showCard(page, `
     <h1 class="title">Try it on your app</h1>
     <div class="rule"></div>
-    <div class="codeline"><span class="prompt">$</span>bunx @rld/annotator dev http://localhost:5173</div>
-    <p class="tagline" style="margin-top:22px;">github.com/rld/annotator</p>
+    <div class="codeline"><span class="prompt">$</span>bunx @interworks/annotator dev http://localhost:5173</div>
+    <p class="tagline" style="margin-top:22px;">github.com/InterWorks/annotator</p>
   `);
   await sleep(2600);
 

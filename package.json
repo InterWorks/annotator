@@ -1,5 +1,5 @@
 {
-  "name": "@rld/annotator",
+  "name": "@interworks/annotator",
   "version": "0.1.0",
   "description": "Click any element on a page, leave a comment, export to wherever. Works as a paste-into-devtools script or as a Vite dev plugin.",
   "type": "module",

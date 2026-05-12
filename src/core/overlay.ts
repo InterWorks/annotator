@@ -331,7 +331,7 @@ export function mount(opts: MountOptions = {}): MountHandle {
 
   function renderItem(a: Annotation, idx: number): string {
     const sourceFrag = a.source
-      ? ` <span class="source">${escapeHtml(a.source.fileName.split("/").pop() ?? a.source.fileName)}:${a.source.lineNumber}</span>`
+      ? ` <span class="source">${escapeHtml(a.source.fileName.split(/[\\/]/).pop() ?? a.source.fileName)}:${a.source.lineNumber}</span>`
       : "";
     const titleText = a.component
       ? `${a.component.name}${a.component.props.id ? ` #${a.component.props.id}` : ""}`
@@ -554,19 +554,27 @@ export function mount(opts: MountOptions = {}): MountHandle {
   /**
    * In no-server modes (clipboard, download), trigger PNG downloads for any
    * screenshots that don't yet have a path. We assume the browser drops them
-   * in the user's default Downloads folder and bake `~/Downloads/<filename>`
-   * into the annotation so the exported markdown links to the right place.
+   * in the user's default Downloads folder and bake a platform-appropriate
+   * path into the annotation so the exported markdown links to the right place.
    *
-   * `~` is left literal — the consumer (an agent reading the .md) is expected
-   * to expand it; the alternative would require knowing the user's $HOME from
-   * inside the browser, which we don't have.
+   * The home directory can't be read from inside the browser, so we use
+   * shell-expandable placeholders:
+   *   Unix:    `~/Downloads/<filename>` (expanded by sh / Claude / agents)
+   *   Windows: `%USERPROFILE%\Downloads\<filename>` (expanded by cmd, PS, agents)
    */
+  function downloadsPathFor(filename: string): string {
+    const ua = (navigator.userAgent || "").toLowerCase();
+    const isWindows = ua.includes("windows") || ua.includes("win64") || ua.includes("win32");
+    return isWindows
+      ? `%USERPROFILE%\\Downloads\\${filename}`
+      : `~/Downloads/${filename}`;
+  }
   function flushScreenshotsToDownloads(): boolean {
     let downloaded = false;
     for (const a of store.list()) {
       if (a.screenshot && a.screenshot.dataUrl && !a.screenshot.path) {
         downloadDataUrl(a.screenshot.filename, a.screenshot.dataUrl);
-        store.update(a.id, { screenshot: { ...a.screenshot, path: `~/Downloads/${a.screenshot.filename}` } });
+        store.update(a.id, { screenshot: { ...a.screenshot, path: downloadsPathFor(a.screenshot.filename) } });
         downloaded = true;
       }
     }
@@ -584,7 +592,7 @@ export function mount(opts: MountOptions = {}): MountHandle {
     const downloaded = flushScreenshotsToDownloads();
     const { spec, payload } = getCurrentExport();
     const ok = await copyToClipboard(payload);
-    const tail = downloaded ? " (screenshots → ~/Downloads)" : "";
+    const tail = downloaded ? " (screenshots → Downloads/)" : "";
     showStatus(ok ? `Copied ${spec.label}${tail} ✓` : `Copy failed (logged to console)`);
   });
 

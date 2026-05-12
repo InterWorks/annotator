@@ -17,7 +17,9 @@ function propsLine(props: Record<string, string | number | boolean>): string {
  * Path that goes into rendered markdown. If we don't have the absolute path
  * yet (we usually don't on the client), we emit a placeholder that the server
  * rewrites after it writes the PNG to disk. In no-server / download mode the
- * client patches `screenshot.path` to `~/Downloads/<filename>` before render.
+ * client patches `screenshot.path` to a shell-expandable downloads path
+ * (`~/Downloads/<filename>` on Unix, `%USERPROFILE%\Downloads\<filename>`
+ * on Windows) before render.
  */
 function shotPath(a: Annotation): string | null {
   if (!a.screenshot) return null;

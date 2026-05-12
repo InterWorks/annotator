@@ -4,6 +4,7 @@
  */
 import { readFile, writeFile, mkdir, symlink, stat, access, copyFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { homedir } from "node:os";
 import { join, resolve, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -300,11 +301,17 @@ async function cmdCopy(): Promise<void> {
   await ensureBuilt();
   const body = await readFile(IIFE_PATH, "utf8");
 
-  // Try Wayland (wl-copy), then X11 (xclip), then macOS (pbcopy).
+  // Try platform clipboards in turn:
+  //   Windows: clip.exe (built in) and PowerShell Set-Clipboard
+  //   macOS:   pbcopy
+  //   Linux:   wl-copy (Wayland) → xclip (X11) → xsel
   const candidates: string[][] = [
+    ["clip.exe"],
+    ["powershell.exe", "-NoProfile", "-Command", "$input | Set-Clipboard"],
+    ["pbcopy"],
     ["wl-copy"],
     ["xclip", "-selection", "clipboard"],
-    ["pbcopy"],
+    ["xsel", "--clipboard", "--input"],
   ];
   for (const cmd of candidates) {
     try {
@@ -315,7 +322,8 @@ async function cmdCopy(): Promise<void> {
       if (code === 0) { console.log(`copied ${body.length} bytes via ${cmd[0]}`); return; }
     } catch {}
   }
-  console.error("annotator: no clipboard tool found (tried wl-copy, xclip, pbcopy).");
+  console.error("annotator: no clipboard tool found");
+  console.error("           tried: clip.exe, powershell Set-Clipboard, pbcopy, wl-copy, xclip, xsel");
   console.error("           use 'annotator print | <your clipboard cmd>' instead");
   process.exit(1);
 }
@@ -358,9 +366,9 @@ async function cmdDev(): Promise<void> {
 
   const port = Number(flag("port")) || 5800;
   const outDir = (typeof flag("out") === "string" ? flag("out") as string : null)
-    ?? join(process.env["HOME"] ?? ".", ".annotator");
+    ?? join(homedir() || ".", ".annotator");
 
-  const slug = (process.cwd().split("/").pop() || "session").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "session";
+  const slug = (process.cwd().split(/[\\/]/).pop() || "session").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "session";
   const sessionDir = join(outDir, slug);
 
   const iifeBody = await readFile(IIFE_PATH, "utf8");

@@ -2,12 +2,14 @@ import type { Annotation, ExportFormat } from "./types.ts";
 import { Store } from "./store.ts";
 import { buildSelector } from "./selector.ts";
 import { buildPreview } from "./preview.ts";
-import { getComponentInfo } from "../adapters/react-fiber.ts";
+import { getComponentInfo, getComponentFiberFn } from "../adapters/react-fiber.ts";
 import { getSourceLocation } from "../adapters/react-source.ts";
+import { resolveFunctionFromBundles } from "../adapters/source-map.ts";
 import { EXPORTS, render as renderExport } from "../exports/index.ts";
 import { copyToClipboard } from "../transports/clipboard.ts";
-import { downloadFile } from "../transports/download.ts";
+import { downloadFile, downloadDataUrl } from "../transports/download.ts";
 import { postJson } from "../transports/http.ts";
+import { CaptureSession } from "./capture.ts";
 
 const STYLE = `
   #ann-toggle {
@@ -52,6 +54,8 @@ const STYLE = `
   #ann-panel header button:hover, #ann-panel header select:hover { background: #f6f7f9; }
   #ann-panel header button.primary { background: #0b1220; color: #fff; border-color: #0b1220; }
   #ann-panel header button.primary:hover { background: #1a365d; border-color: #1a365d; }
+  #ann-panel header button.toggle-on { background: #b45309; color: #fff; border-color: #b45309; }
+  #ann-panel header button.toggle-on:hover { background: #c46e1a; border-color: #c46e1a; }
 
   #ann-export-row {
     padding: 8px 16px; border-bottom: 1px solid #d8dee7;
@@ -100,6 +104,15 @@ const STYLE = `
     font-style: italic;
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
     overflow: hidden;
+  }
+  .ann-item .shot {
+    margin: 6px 0;
+    border: 1px solid #d8dee7; border-radius: 4px;
+    overflow: hidden; background: #f6f7f9;
+    max-height: 140px; display: flex; align-items: center; justify-content: center;
+  }
+  .ann-item .shot img {
+    max-width: 100%; max-height: 140px; display: block;
   }
   .ann-item .comment { font-size: 13px; color: #0b1220; margin: 6px 0; white-space: pre-wrap; }
   .ann-item textarea {
@@ -165,6 +178,7 @@ const STYLE = `
     .ann-item .meta { color: #8a99ad; }
     .ann-item .meta .strategy { background: #243047; color: #c2cdd9; }
     .ann-item .preview { color: #8a99ad; }
+    .ann-item .shot { background: #0f1626; border-color: #243047; }
     .ann-item .comment { color: #e6edf6; }
     .ann-item textarea { background: #0f1626; color: #e6edf6; border-color: #2a3855; }
     .ann-item .row button { background: #131c2d; border-color: #2a3855; color: #e6edf6; }
@@ -183,6 +197,16 @@ const STYLE = `
     body.ann-panel-open { padding-right: 0 !important; }
   }
 `;
+
+function looksMinified(name: string): boolean {
+  if (!name) return true;
+  if (name.length <= 2) return true;
+  // Single-letter or two-letter names with $/_, e.g. `_d`, `$d`, `Ke`, `Se`.
+  // Real component names are typically PascalCase words (`BudgetTable`).
+  if (/^[a-zA-Z_$][\w$]?$/.test(name)) return true;
+  if (name.length <= 3 && !/^[A-Z][a-z]/.test(name)) return true;
+  return false;
+}
 
 function escapeHtml(s: string): string {
   return String(s).replace(/[&<>"']/g, (c) =>
@@ -215,7 +239,9 @@ export function mount(opts: MountOptions = {}): MountHandle {
   }
 
   const store = new Store(opts.scope);
+  const capture = new CaptureSession();
   let active = false;
+  let captureOn = false;
   let lastHover: Element | null = null;
 
   // ---------- Styles ----------
@@ -237,6 +263,7 @@ export function mount(opts: MountOptions = {}): MountHandle {
     <header>
       <h3>Annotations (<span id="ann-count">0</span>)</h3>
       <div class="actions">
+        <button id="ann-shots" title="Capture a screenshot crop per annotation (asks for screen-share permission once)">📷 Shots: off</button>
         <button id="ann-clear">Clear</button>
         <button id="ann-close" title="Close panel">×</button>
       </div>
@@ -270,6 +297,32 @@ export function mount(opts: MountOptions = {}): MountHandle {
   const list = panel.querySelector("#ann-list") as HTMLDivElement;
   const countEl = panel.querySelector("#ann-count") as HTMLSpanElement;
   const formatSel = panel.querySelector("#ann-format") as HTMLSelectElement;
+  const shotsBtn = panel.querySelector("#ann-shots") as HTMLButtonElement;
+
+  function syncShotsBtn() {
+    shotsBtn.textContent = captureOn ? "📷 Shots: on" : "📷 Shots: off";
+    shotsBtn.classList.toggle("toggle-on", captureOn);
+  }
+  syncShotsBtn();
+
+  shotsBtn.addEventListener("click", async () => {
+    if (captureOn) {
+      captureOn = false;
+      capture.stop();
+      syncShotsBtn();
+      showStatus("Screenshots off");
+      return;
+    }
+    showStatus("Pick this tab in the share dialog…", 4000);
+    const ok = await capture.ensureReady();
+    if (ok) {
+      captureOn = true;
+      syncShotsBtn();
+      showStatus("Screenshots on — click any element");
+    } else {
+      showStatus("Screen-share permission denied", 2400);
+    }
+  });
 
   // ---------- Render ----------
   function syncBodyClass() {
@@ -294,6 +347,7 @@ export function mount(opts: MountOptions = {}): MountHandle {
         </div>
         ${meta}
         ${a.preview.text ? `<div class="preview">"${escapeHtml(a.preview.text)}"</div>` : ""}
+        ${a.screenshot?.dataUrl ? `<div class="shot"><img src="${a.screenshot.dataUrl}" alt="screenshot"/></div>` : ""}
         <textarea data-idx="${idx}" placeholder="Your comment…">${escapeHtml(a.comment || "")}</textarea>
         <div class="row">
           <span class="hint">⌘/Ctrl + Enter to save · Esc to cancel</span>
@@ -310,6 +364,7 @@ export function mount(opts: MountOptions = {}): MountHandle {
       </div>
       ${meta}
       ${a.preview.text ? `<div class="preview">"${escapeHtml(a.preview.text)}"</div>` : ""}
+      ${a.screenshot?.dataUrl ? `<div class="shot"><img src="${a.screenshot.dataUrl}" alt="screenshot"/></div>` : ""}
       <div class="comment">${escapeHtml(a.comment || "(no comment)")}</div>
       <div class="row">
         <span class="spacer"></span>
@@ -389,6 +444,7 @@ export function mount(opts: MountOptions = {}): MountHandle {
     const preview = buildPreview(t);
     const component = getComponentInfo(t);
     const source = getSourceLocation(t);
+    const fn = getComponentFiberFn(t);
 
     const partial: Omit<Annotation, "id" | "timestamp" | "url"> = {
       selector, preview, comment: "", editing: true,
@@ -397,6 +453,38 @@ export function mount(opts: MountOptions = {}): MountHandle {
     if (source) partial.source = source;
 
     const created = store.add(partial);
+
+    // Screenshot crop (best-effort, async). Hide our hover outline first so it
+    // doesn't bleed into the captured frame.
+    if (captureOn) {
+      const hadHover = (t as Element).classList.contains("ann-hover");
+      if (hadHover) (t as Element).classList.remove("ann-hover");
+      const slug = (component?.name || preview.tagName || "el").toLowerCase().replace(/[^a-z0-9]+/g, "-");
+      const filename = `ann-${created.id}-${slug}.png`;
+      capture.cropElement(t as Element, filename).then((shot) => {
+        if (hadHover) (t as Element).classList.add("ann-hover");
+        if (shot) store.update(created.id, { screenshot: shot });
+      }).catch(() => { if (hadHover) (t as Element).classList.add("ann-hover"); });
+    }
+
+    // Production builds expose minified component names (`_d`, `Ke`) and have no
+    // `_debugSource`. If we're missing a source location or the name looks
+    // minified, async-resolve via source maps and patch the annotation.
+    if (fn && (!source || !component || looksMinified(component.name))) {
+      resolveFunctionFromBundles(fn).then((resolved) => {
+        if (!resolved) return;
+        const updates: Partial<Annotation> = {};
+        if (resolved.name && component && resolved.name !== component.name) {
+          updates.component = { ...component, name: resolved.name };
+        } else if (resolved.name && !component) {
+          updates.component = { name: resolved.name, ancestors: [], props: {} };
+        }
+        if (resolved.source && !source) {
+          updates.source = resolved.source;
+        }
+        if (Object.keys(updates).length) store.update(created.id, updates);
+      }).catch(() => {});
+    }
     panel.classList.remove("hidden");
     setTimeout(() => {
       const idx = store.list().findIndex((a) => a.id === created.id);
@@ -463,6 +551,28 @@ export function mount(opts: MountOptions = {}): MountHandle {
     if (confirm(`Clear all ${store.count()} annotation(s)?`)) store.clear();
   });
 
+  /**
+   * In no-server modes (clipboard, download), trigger PNG downloads for any
+   * screenshots that don't yet have a path. We assume the browser drops them
+   * in the user's default Downloads folder and bake `~/Downloads/<filename>`
+   * into the annotation so the exported markdown links to the right place.
+   *
+   * `~` is left literal — the consumer (an agent reading the .md) is expected
+   * to expand it; the alternative would require knowing the user's $HOME from
+   * inside the browser, which we don't have.
+   */
+  function flushScreenshotsToDownloads(): boolean {
+    let downloaded = false;
+    for (const a of store.list()) {
+      if (a.screenshot && a.screenshot.dataUrl && !a.screenshot.path) {
+        downloadDataUrl(a.screenshot.filename, a.screenshot.dataUrl);
+        store.update(a.id, { screenshot: { ...a.screenshot, path: `~/Downloads/${a.screenshot.filename}` } });
+        downloaded = true;
+      }
+    }
+    return downloaded;
+  }
+
   function getCurrentExport(): { spec: typeof EXPORTS[number]; payload: string } {
     const id = formatSel.value as ExportFormat;
     const spec = EXPORTS.find((e) => e.id === id) ?? EXPORTS[0]!;
@@ -471,32 +581,43 @@ export function mount(opts: MountOptions = {}): MountHandle {
   }
 
   (panel.querySelector("#ann-copy") as HTMLButtonElement).addEventListener("click", async () => {
+    const downloaded = flushScreenshotsToDownloads();
     const { spec, payload } = getCurrentExport();
     const ok = await copyToClipboard(payload);
-    showStatus(ok ? `Copied ${spec.label} ✓` : `Copy failed (logged to console)`);
+    const tail = downloaded ? " (screenshots → ~/Downloads)" : "";
+    showStatus(ok ? `Copied ${spec.label}${tail} ✓` : `Copy failed (logged to console)`);
   });
 
   (panel.querySelector("#ann-download") as HTMLButtonElement).addEventListener("click", () => {
+    const downloaded = flushScreenshotsToDownloads();
     const { spec, payload } = getCurrentExport();
     const slug = (document.title || "annotations").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "annotations";
     const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
     downloadFile(`${slug}-${stamp}.${spec.ext}`, payload, spec.mime);
-    showStatus(`Downloaded ${spec.label}`);
+    showStatus(`Downloaded ${spec.label}${downloaded ? " + screenshots" : ""}`);
   });
 
   const postBtn = panel.querySelector("#ann-post") as HTMLButtonElement | null;
   if (postBtn && opts.endpoint) {
     postBtn.addEventListener("click", async () => {
+      // Server-mode export: ship screenshots as separate {filename, dataUrl}
+      // entries so the server can write them and substitute absolute paths.
+      const anns = store.list().filter((a) => !a.editing || a.comment);
+      const screenshots = anns
+        .filter((a) => a.screenshot?.dataUrl)
+        .map((a) => ({ filename: a.screenshot!.filename, dataUrl: a.screenshot!.dataUrl! }));
       const { spec, payload } = getCurrentExport();
       const res = await postJson(opts.endpoint!, {
         format: spec.id,
         url: location.href,
         title: document.title,
         capturedAt: new Date().toISOString(),
-        annotations: store.list(),
+        annotations: anns,
+        screenshots,
         rendered: payload,
       });
-      showStatus(res.ok ? `Sent to ${opts.endpoint} ✓` : `Send failed (${res.status})`);
+      const shotTail = screenshots.length ? ` (+${screenshots.length} shot${screenshots.length === 1 ? "" : "s"})` : "";
+      showStatus(res.ok ? `Sent to ${opts.endpoint}${shotTail} ✓` : `Send failed (${res.status})`);
     });
   }
 
@@ -515,6 +636,7 @@ export function mount(opts: MountOptions = {}): MountHandle {
     unmount: () => {
       document.removeEventListener("mousemove", onMouseMove, true);
       document.removeEventListener("click", onClick, true);
+      capture.stop();
       style.remove();
       toggle.remove();
       panel.remove();

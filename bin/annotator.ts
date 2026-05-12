@@ -10,6 +10,56 @@ import { fileURLToPath } from "node:url";
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const IIFE_PATH = join(PACKAGE_ROOT, "dist", "annotator.iife.js");
 
+async function writeScreenshots(
+  outDir: string,
+  shots: Array<{ filename: string; dataUrl: string }> | undefined,
+): Promise<Record<string, string>> {
+  const map: Record<string, string> = {};
+  if (!Array.isArray(shots) || shots.length === 0) return map;
+  const dir = join(outDir, "screenshots");
+  await mkdir(dir, { recursive: true });
+  for (const s of shots) {
+    if (!s || typeof s.filename !== "string" || typeof s.dataUrl !== "string") continue;
+    const m = /^data:([^;]+);base64,(.+)$/.exec(s.dataUrl);
+    if (!m) continue;
+    const buf = Buffer.from(m[2]!, "base64");
+    const safe = s.filename.replace(/[^A-Za-z0-9._-]/g, "_");
+    const dest = join(dir, safe);
+    await writeFile(dest, buf);
+    map[s.filename] = dest;
+  }
+  return map;
+}
+
+function applyShotPaths(payload: any, paths: Record<string, string>): void {
+  if (!Object.keys(paths).length) return;
+  if (Array.isArray(payload?.annotations)) {
+    for (const a of payload.annotations) {
+      const s = a?.screenshot;
+      if (s && typeof s.filename === "string" && paths[s.filename]) {
+        s.path = paths[s.filename];
+      }
+    }
+  }
+  if (typeof payload?.rendered === "string") {
+    payload.rendered = payload.rendered.replace(
+      /__SCREENSHOT_PATH_([A-Za-z0-9._-]+?\.png)__/g,
+      (full: string, filename: string) => paths[filename] ?? full,
+    );
+  }
+}
+
+function stripDataUrls(payload: any): any {
+  const clone = JSON.parse(JSON.stringify(payload));
+  if (Array.isArray(clone.screenshots)) {
+    clone.screenshots = clone.screenshots.map((s: any) => ({ filename: s.filename }));
+  }
+  if (Array.isArray(clone.annotations)) {
+    for (const a of clone.annotations) if (a?.screenshot?.dataUrl) delete a.screenshot.dataUrl;
+  }
+  return clone;
+}
+
 type Mode = "vite" | "static" | "auto";
 
 const args = process.argv.slice(2);
@@ -250,7 +300,7 @@ async function cmdCopy(): Promise<void> {
   await ensureBuilt();
   const body = await readFile(IIFE_PATH, "utf8");
 
-  // Try Wayland (omarchy default), then xclip, then macOS pbcopy.
+  // Try Wayland (wl-copy), then X11 (xclip), then macOS (pbcopy).
   const candidates: string[][] = [
     ["wl-copy"],
     ["xclip", "-selection", "clipboard"],
@@ -340,16 +390,19 @@ async function cmdDev(): Promise<void> {
           let parsed: any;
           try { parsed = JSON.parse(body); } catch { return new Response(JSON.stringify({ ok: false, error: "invalid JSON" }), { status: 400 }); }
           await mkdir(sessionDir, { recursive: true });
+          const shotPaths = await writeScreenshots(sessionDir, parsed.screenshots);
+          applyShotPaths(parsed, shotPaths);
           const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
           const titleSlug = (parsed.title || "session").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
           const file = join(sessionDir, `${stamp}-${titleSlug || "session"}.json`);
-          await writeFile(file, JSON.stringify(parsed, null, 2));
+          const persisted = stripDataUrls(parsed);
+          await writeFile(file, JSON.stringify(persisted, null, 2));
           if (typeof parsed.rendered === "string") {
             const ext = parsed.format === "json" ? "json" : "md";
             await writeFile(file.replace(/\.json$/, `.${ext}`), parsed.rendered);
           }
-          console.log(`[annotator] wrote ${file}`);
-          return new Response(JSON.stringify({ ok: true, file }), { headers: { "content-type": "application/json" } });
+          console.log(`[annotator] wrote ${file}${Object.keys(shotPaths).length ? ` (+${Object.keys(shotPaths).length} shots)` : ""}`);
+          return new Response(JSON.stringify({ ok: true, file, screenshots: shotPaths }), { headers: { "content-type": "application/json" } });
         } catch (e) {
           return new Response(JSON.stringify({ ok: false, error: (e as Error).message }), { status: 500 });
         }

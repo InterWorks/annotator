@@ -9,3 +9,13 @@ export function downloadFile(filename: string, content: string, mime: string): v
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 5_000);
 }
+
+/** Download a data: URL straight as a file (browser saves to default Downloads). */
+export function downloadDataUrl(filename: string, dataUrl: string): void {
+  const a = document.createElement("a");
+  a.href = dataUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}

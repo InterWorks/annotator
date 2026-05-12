@@ -68,6 +68,27 @@ function pickPrimitiveProps(props: any): Record<string, string | number | boolea
   return out;
 }
 
+function getComponentFn(fiber: FiberLike): Function | null {
+  const t = fiber.type ?? fiber.elementType;
+  if (typeof t === "function") return t;
+  if (t && typeof t === "object") {
+    if (typeof t.render === "function") return t.render;
+    if (typeof t.type === "function") return t.type;
+  }
+  return null;
+}
+
+function findNearestUserFiber(el: Element): FiberLike | null {
+  const fiber = getFiberFromElement(el);
+  if (!fiber) return null;
+  let cur: FiberLike | null = fiber;
+  while (cur) {
+    if (isUserComponent(cur)) return cur;
+    cur = cur.return ?? null;
+  }
+  return null;
+}
+
 export function getComponentInfo(el: Element): ComponentInfo | undefined {
   const fiber = getFiberFromElement(el);
   if (!fiber) return undefined;
@@ -96,4 +117,10 @@ export function getComponentInfo(el: Element): ComponentInfo | undefined {
   const result: ComponentInfo = { name, ancestors, props };
   if (typeof nearest.key === "string") result.key = nearest.key;
   return result;
+}
+
+export function getComponentFiberFn(el: Element): Function | null {
+  const nearest = findNearestUserFiber(el);
+  if (!nearest) return null;
+  return getComponentFn(nearest);
 }

@@ -13,11 +13,24 @@ function propsLine(props: Record<string, string | number | boolean>): string {
   return parts.length ? ` (${parts.join(", ")})` : "";
 }
 
+/**
+ * Path that goes into rendered markdown. If we don't have the absolute path
+ * yet (we usually don't on the client), we emit a placeholder that the server
+ * rewrites after it writes the PNG to disk. In no-server / download mode the
+ * client patches `screenshot.path` to `~/Downloads/<filename>` before render.
+ */
+function shotPath(a: Annotation): string | null {
+  if (!a.screenshot) return null;
+  return a.screenshot.path ?? `__SCREENSHOT_PATH_${a.screenshot.filename}__`;
+}
+
 export function toMarkdown(annotations: Annotation[]): string {
   const lines = header(annotations);
   for (const a of annotations) {
     lines.push(`## ${a.id}. \`${a.selector.value}\``);
     if (a.preview.text) lines.push(`> ${a.preview.text}`);
+    const shot = shotPath(a);
+    if (shot) lines.push(`![screenshot](${shot})`);
     lines.push("");
     lines.push(a.comment || "_(no comment)_");
     lines.push("");
@@ -45,6 +58,8 @@ export function toMarkdownVerbose(annotations: Annotation[]): string {
     if (a.preview.text) {
       lines.push(`- **preview**: > ${a.preview.text}`);
     }
+    const shot = shotPath(a);
+    if (shot) lines.push(`- **screenshot**: \`${shot}\``);
     lines.push("");
     lines.push(a.comment || "_(no comment)_");
     lines.push("");
@@ -74,6 +89,8 @@ export function toClaudePrompt(annotations: Annotation[]): string {
         : `selector \`${a.selector.value}\``;
     lines.push(`${a.id}. ${target}`);
     if (a.preview.text) lines.push(`   Currently: "${a.preview.text}"`);
+    const shot = shotPath(a);
+    if (shot) lines.push(`   Screenshot: ${shot}`);
     lines.push(`   Change: ${a.comment || "(no comment)"}`);
     lines.push("");
   }
@@ -99,6 +116,8 @@ export function toGithubIssue(annotations: Annotation[]): string {
       lines.push(`- Source: \`${a.source.fileName}:${a.source.lineNumber}${col}\``);
     }
     if (a.preview.text) lines.push(`- Preview: > ${a.preview.text}`);
+    const shot = shotPath(a);
+    if (shot) lines.push(`- Screenshot: \`${shot}\``);
     lines.push("");
     lines.push(a.comment || "_(no comment)_");
     lines.push("");

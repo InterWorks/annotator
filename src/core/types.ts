@@ -33,6 +33,19 @@ export interface PreviewInfo {
   tagName: string;
 }
 
+export interface Screenshot {
+  /** Bare filename (e.g. "ann-7-cell.png") — the server / download writes this. */
+  filename: string;
+  /** Absolute filesystem path once written. May be a `__SCREENSHOT_PATH_<filename>__` placeholder at render time. */
+  path?: string;
+  /** Base64 data URL of the image. Held in memory; stripped before persisting big sessions. */
+  dataUrl?: string;
+  /** Rect within the captured viewport, in CSS pixels relative to the viewport. */
+  bounds: { x: number; y: number; width: number; height: number };
+  /** What the image actually contains. */
+  mode: "element" | "viewport" | "page";
+}
+
 export interface Annotation {
   id: number;
   timestamp: string;
@@ -43,6 +56,7 @@ export interface Annotation {
   preview: PreviewInfo;
   comment: string;
   tags?: string[];
+  screenshot?: Screenshot;
   editing?: boolean;
 }
 
